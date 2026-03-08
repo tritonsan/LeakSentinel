@@ -1,0 +1,19 @@
+{
+  "impact": {
+    "dispatch_cost_usd": 1200.0,
+    "leak_loss_per_hour_usd": 5000.0,
+    "default_delay_hours": 1.0,
+    "investigate_dispatch_factor": 0.25,
+    "investigate_leak_factor": 0.15
+  },
+  "scorecard": {
+    "water_unit_cost_usd_per_m3": 1.8,
+    "co2e_kg_per_m3": 0.45,
+    "baseline_nrw_pct": 24.0
+  },
+  "sensitivity": {
+    "low_multiplier": 0.8,
+    "mid_multiplier": 1.0,
+    "high_multiplier": 1.2
+  }
+}

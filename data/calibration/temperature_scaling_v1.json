@@ -1,0 +1,73 @@
+{
+  "version": "temperature_scaling_v1",
+  "default": {
+    "temperature": 0.85,
+    "decision_temperatures": {
+      "LEAK_CONFIRMED": 0.9,
+      "IGNORE_PLANNED_OPS": 0.85,
+      "INVESTIGATE": 0.95
+    },
+    "confidence_table": [
+      {
+        "raw": 0.05,
+        "calibrated": 0.08
+      },
+      {
+        "raw": 0.25,
+        "calibrated": 0.33
+      },
+      {
+        "raw": 0.5,
+        "calibrated": 0.62
+      },
+      {
+        "raw": 0.75,
+        "calibrated": 0.86
+      },
+      {
+        "raw": 0.95,
+        "calibrated": 0.97
+      }
+    ]
+  },
+  "tracks": {
+    "core": {
+      "temperature": 0.83,
+      "decision_temperatures": {
+        "LEAK_CONFIRMED": 0.9,
+        "IGNORE_PLANNED_OPS": 0.82,
+        "INVESTIGATE": 0.92
+      }
+    },
+    "real_challenge": {
+      "temperature": 0.88,
+      "decision_temperatures": {
+        "LEAK_CONFIRMED": 0.93,
+        "IGNORE_PLANNED_OPS": 0.86,
+        "INVESTIGATE": 0.95
+      },
+      "confidence_table": [
+        {
+          "raw": 0.05,
+          "calibrated": 0.08
+        },
+        {
+          "raw": 0.25,
+          "calibrated": 0.31
+        },
+        {
+          "raw": 0.5,
+          "calibrated": 0.6
+        },
+        {
+          "raw": 0.75,
+          "calibrated": 0.84
+        },
+        {
+          "raw": 0.95,
+          "calibrated": 0.96
+        }
+      ]
+    }
+  }
+}

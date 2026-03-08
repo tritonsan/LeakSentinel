@@ -1,0 +1,76 @@
+name: CD Production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'leaksentinel' }}
+  STACK_NAME: ${{ vars.PROD_STACK_NAME || 'leaksentinel-prod' }}
+  APP_NAME: ${{ vars.PROD_APP_NAME || 'leaksentinel-prod' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        run: |
+          ACCOUNT_ID="${{ vars.AWS_ACCOUNT_ID }}"
+          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" --region "${AWS_REGION}" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "${ECR_REPOSITORY}" --region "${AWS_REGION}" >/dev/null
+          docker build -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy CloudFormation (production)
+        run: |
+          aws cloudformation deploy \
+            --region "${AWS_REGION}" \
+            --stack-name "${STACK_NAME}" \
+            --template-file infra/cfn/ecs-fargate-leaksentinel.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              AppName="${APP_NAME}" \
+              ImageUri="${{ steps.image.outputs.image_uri }}" \
+              VpcId="${{ vars.VPC_ID }}" \
+              PublicSubnets="${{ vars.PUBLIC_SUBNETS }}" \
+              PrivateSubnets="${{ vars.PRIVATE_SUBNETS }}" \
+              AssignPublicIp="${{ vars.PROD_ASSIGN_PUBLIC_IP || 'DISABLED' }}" \
+              AwsRegion="${AWS_REGION}" \
+              NovaReasoningModelId="${{ vars.NOVA_REASONING_MODEL_ID }}" \
+              NovaEmbeddingsModelId="${{ vars.NOVA_EMBEDDINGS_MODEL_ID }}" \
+              NovaMultimodalModelId="${{ vars.NOVA_MULTIMODAL_MODEL_ID }}" \
+              NovaSonicModelId="${{ vars.NOVA_SONIC_MODEL_ID }}" \
+              VoiceBackendUrl="${{ vars.PROD_VOICE_BACKEND_URL }}" \
+              AllowedOrigins="${{ vars.PROD_ALLOWED_ORIGINS }}" \
+              AuthEnforcement="on" \
+              RateLimitEnforcement="on" \
+              RateLimitPerMinute="${{ vars.PROD_RATE_LIMIT_PER_MINUTE || '120' }}" \
+              VoiceRequiredForReadiness="${{ vars.PROD_VOICE_REQUIRED_FOR_READINESS || 'true' }}" \
+              ApiKeysSecretValueFrom="${{ secrets.PROD_API_KEYS_SECRET_VALUE_FROM }}" \
+              DesiredCount="${{ vars.PROD_DESIRED_COUNT || '2' }}" \
+              MinCapacity="${{ vars.PROD_MIN_CAPACITY || '2' }}" \
+              MaxCapacity="${{ vars.PROD_MAX_CAPACITY || '6' }}" \
+              CpuScaleTarget="${{ vars.PROD_CPU_SCALE_TARGET || '60' }}" \
+              MemoryScaleTarget="${{ vars.PROD_MEMORY_SCALE_TARGET || '70' }}" \
+              AlarmTopicArn="${{ vars.PROD_ALARM_TOPIC_ARN }}" \
+              EnableDashboard="${{ vars.PROD_ENABLE_DASHBOARD || 'true' }}"

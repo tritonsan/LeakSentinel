@@ -1,0 +1,30 @@
+{
+  "feedback_id": "fb-1b599ff06dcc",
+  "created_at": "2026-02-12T15:01:52Z",
+  "outcome": "false_positive_rejected_by_operator",
+  "reviewer": "",
+  "operator_note": "planned heat artifact",
+  "bundle_path": "data\\evidence_bundles\\S02_zone-1_2026-02-05T03-00-00.json",
+  "scenario_id": "S02",
+  "zone": "zone-1",
+  "timestamp": "2026-02-05T03:00:00",
+  "decision": "LEAK_CONFIRMED",
+  "confidence": 0.85,
+  "root_cause_guess": "planned_operation_overlap",
+  "evidence_gap": "confirm_planned_ops_status_and_capture_post_window_sample",
+  "fingerprint_text": "zone=zone-1 ts=2026-02-05T03:00:00 decision=LEAK_CONFIRMED confidence=0.85 anomaly=1.5260093036552829 thermal_hit=True thermal_conf=0.85 audio_hit=None audio_conf=None audio_skipped=True planned=True planned_ids=OP-001 Flow anomaly_score=1.53 observed=42.83773876039258 expected=42.32233047033631. Planned ops in window: OP-001 Thermal: hit=True conf=0.85. Audio check skipped (thermal confidence above threshold). operator_note=planned heat artifact root_cause_guess=planned_operation_overlap evidence_gap=confirm_planned_ops_status_and_capture_post_window_sample",
+  "features": {
+    "zone": "zone-1",
+    "timestamp": "2026-02-05T03:00:00",
+    "anomaly_score": 1.5260093036552829,
+    "thermal_hit": true,
+    "thermal_conf": 0.85,
+    "audio_hit": false,
+    "audio_conf": 0.0,
+    "audio_skipped": true,
+    "planned_op_found": true,
+    "planned_op_ids": [
+      "OP-001"
+    ]
+  }
+}

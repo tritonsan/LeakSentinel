@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+.env.*
+
+# Data artifacts (keep scenarios + ops JSON committed)
+data/_cache/
+data/flows/
+data/thermal/
+data/audio/
+data/spectrogram/
+data/manifest/
+data/evidence_bundles/
+
+# Reports (generated)
+data/_reports/
+
+# LLM offload reports (generated)
+data/_llm_reports/
+
+!.gitignore
+!data/scenarios/
+!data/scenarios/scenario_pack.json
+!data/ops_db.json
+
+# Node
+node_modules/
+npm-debug.log*
+package-lock.json
+
+# Local media captures
+*.mp4
+*.mov

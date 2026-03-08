@@ -1,0 +1,532 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: LeakSentinel hosted API (FastAPI + WebSocket) on ECS Fargate behind an ALB.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: leaksentinel
+  ContainerPort:
+    Type: Number
+    Default: 8000
+  DesiredCount:
+    Type: Number
+    Default: 2
+  Cpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+  Memory:
+    Type: String
+    Default: "1024"
+    AllowedValues: ["512", "1024", "2048", "3072", "4096", "8192", "16384", "30720"]
+  ImageUri:
+    Type: String
+    Description: ECR image URI, e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/leaksentinel:latest
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets for ALB.
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets for ECS tasks.
+  AssignPublicIp:
+    Type: String
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+    Description: For low-cost hackathon deployments, ENABLED avoids NAT Gateway requirements.
+  AwsRegion:
+    Type: String
+    Default: us-east-1
+  NovaReasoningModelId:
+    Type: String
+    Default: ""
+    Description: Nova 2 Lite inference profile ARN/ID (recommended) or model id if on-demand is supported.
+  NovaEmbeddingsModelId:
+    Type: String
+    Default: ""
+  NovaMultimodalModelId:
+    Type: String
+    Default: ""
+  NovaSonicModelId:
+    Type: String
+    Default: ""
+  VoiceBackendUrl:
+    Type: String
+    Default: "http://127.0.0.1:8001"
+    Description: Voice backend base URL for WS bridge (services/voice), e.g. http://voice.internal:8001
+  AllowedOrigins:
+    Type: String
+    Default: "*"
+    Description: Comma-separated allowlist for CORS. Example https://demo.example.com,https://app.example.com
+  AuthEnforcement:
+    Type: String
+    Default: monitor
+    AllowedValues: [off, monitor, on]
+    Description: API auth mode. monitor is demo-safe and logs violations without blocking.
+  RateLimitEnforcement:
+    Type: String
+    Default: monitor
+    AllowedValues: [off, monitor, on]
+    Description: Rate limit mode. monitor is demo-safe and records observed breaches.
+  RateLimitPerMinute:
+    Type: Number
+    Default: 120
+    MinValue: 1
+    MaxValue: 10000
+  VoiceRequiredForReadiness:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: If true, /health/ready returns 503 when voice backend is unreachable.
+  ApiKeysSecretValueFrom:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager/SSM valueFrom reference for LEAKSENTINEL_API_KEYS.
+  MinCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 1
+  MaxCapacity:
+    Type: Number
+    Default: 6
+    MinValue: 1
+  CpuScaleTarget:
+    Type: Number
+    Default: 60
+    MinValue: 20
+    MaxValue: 90
+  MemoryScaleTarget:
+    Type: Number
+    Default: 70
+    MinValue: 20
+    MaxValue: 90
+  AlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: Optional SNS topic ARN for alarm notifications.
+  EnableDashboard:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  P95LatencyAlarmThresholdSeconds:
+    Type: Number
+    Default: 1.5
+    MinValue: 0.1
+  Target5xxAlarmThreshold:
+    Type: Number
+    Default: 5
+    MinValue: 1
+  UnhealthyHostAlarmThreshold:
+    Type: Number
+    Default: 1
+    MinValue: 1
+
+Conditions:
+  HasApiKeysSecret: !Not [!Equals [!Ref ApiKeysSecretValueFrom, ""]]
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmTopicArn, ""]]
+  DashboardEnabled: !Equals [!Ref EnableDashboard, "true"]
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AppName}"
+      RetentionInDays: 30
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AppName}-cluster"
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AppName} ALB SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AppName} Task SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${AppName}-alb"
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Subnets: !Ref PublicSubnets
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AppName}-tg"
+      VpcId: !Ref VpcId
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /health/ready
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: "15"
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ecs-exec"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-task"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub "${AppName}-bedrock"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:Converse
+                  - bedrock:ConverseStream
+                Resource: "*"
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AppName}-task"
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${AppName}-api"
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref AwsRegion
+            - Name: NOVA_REASONING_MODEL_ID
+              Value: !Ref NovaReasoningModelId
+            - Name: NOVA_EMBEDDINGS_MODEL_ID
+              Value: !Ref NovaEmbeddingsModelId
+            - Name: NOVA_MULTIMODAL_MODEL_ID
+              Value: !Ref NovaMultimodalModelId
+            - Name: NOVA_SONIC_MODEL_ID
+              Value: !Ref NovaSonicModelId
+            - Name: LEAKSENTINEL_VOICE_BACKEND_URL
+              Value: !Ref VoiceBackendUrl
+            - Name: LEAKSENTINEL_ALLOWED_ORIGINS
+              Value: !Ref AllowedOrigins
+            - Name: LEAKSENTINEL_AUTH_ENFORCEMENT
+              Value: !Ref AuthEnforcement
+            - Name: LEAKSENTINEL_RATE_LIMIT_ENFORCEMENT
+              Value: !Ref RateLimitEnforcement
+            - Name: LEAKSENTINEL_RATE_LIMIT_PER_MINUTE
+              Value: !Ref RateLimitPerMinute
+            - Name: LEAKSENTINEL_VOICE_REQUIRED_FOR_READINESS
+              Value: !Ref VoiceRequiredForReadiness
+            - Name: LEAKSENTINEL_LOG_LEVEL
+              Value: INFO
+          Secrets:
+            - !If
+              - HasApiKeysSecret
+              - Name: LEAKSENTINEL_API_KEYS
+                ValueFrom: !Ref ApiKeysSecretValueFrom
+              - !Ref AWS::NoValue
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: Listener
+    Properties:
+      ServiceName: !Sub "${AppName}-svc"
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      HealthCheckGracePeriodSeconds: 45
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIp
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          Subnets: !Ref PrivateSubnets
+      LoadBalancers:
+        - ContainerName: !Sub "${AppName}-api"
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+
+  ServiceScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref MaxCapacity
+      MinCapacity: !Ref MinCapacity
+      ResourceId: !Sub "service/${AppName}-cluster/${AppName}-svc"
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  CpuTargetTrackingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${AppName}-cpu-target-tracking"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ServiceScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref CpuScaleTarget
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  MemoryTargetTrackingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub "${AppName}-memory-target-tracking"
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ServiceScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+        TargetValue: !Ref MemoryScaleTarget
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  Target5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Target 5xx responses crossed threshold.
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: !Ref Target5xxAlarmThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+
+  P95LatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: ALB p95 latency exceeded threshold.
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: !Ref P95LatencyAlarmThresholdSeconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Unhealthy host count indicates service instability.
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      DatapointsToAlarm: 2
+      Threshold: !Ref UnhealthyHostAlarmThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt LoadBalancer.LoadBalancerFullName
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+
+  EcsCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: ECS service CPU remains high.
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ClusterName
+          Value: !Sub "${AppName}-cluster"
+        - Name: ServiceName
+          Value: !Sub "${AppName}-svc"
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmTopicArn], !Ref AWS::NoValue]
+
+  OpsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: DashboardEnabled
+    Properties:
+      DashboardName: !Sub "${AppName}-ops"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ALB Errors and Unhealthy Hosts",
+                "view": "timeSeries",
+                "period": 60,
+                "stat": "Sum",
+                "metrics": [
+                  ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "${LoadBalancer.LoadBalancerFullName}", "TargetGroup", "${TargetGroup.TargetGroupFullName}"],
+                  [".", "UnHealthyHostCount", ".", ".", ".", ".", {"stat": "Maximum"}]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ALB p95 Latency",
+                "view": "timeSeries",
+                "period": 60,
+                "metrics": [
+                  ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${LoadBalancer.LoadBalancerFullName}", "TargetGroup", "${TargetGroup.TargetGroupFullName}", {"stat": "p95"}]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "ECS CPU and Memory",
+                "view": "timeSeries",
+                "period": 60,
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ClusterName", "${AppName}-cluster", "ServiceName", "${AppName}-svc"],
+                  [".", "MemoryUtilization", ".", ".", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Request Count",
+                "view": "timeSeries",
+                "period": 60,
+                "stat": "Sum",
+                "metrics": [
+                  ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${LoadBalancer.LoadBalancerFullName}", "TargetGroup", "${TargetGroup.TargetGroupFullName}"]
+                ]
+              }
+            }
+          ]
+        }
+
+Outputs:
+  AlbDnsName:
+    Description: Public URL (HTTP) for hosted API and voice demo page.
+    Value: !GetAtt LoadBalancer.DNSName
+  ClusterName:
+    Description: ECS cluster name.
+    Value: !Sub "${AppName}-cluster"
+  ServiceName:
+    Description: ECS service name.
+    Value: !Sub "${AppName}-svc"
+  LogGroupName:
+    Description: CloudWatch Logs group for API container logs.
+    Value: !Ref LogGroup
+  DashboardName:
+    Condition: DashboardEnabled
+    Description: CloudWatch dashboard name.
+    Value: !Ref OpsDashboard

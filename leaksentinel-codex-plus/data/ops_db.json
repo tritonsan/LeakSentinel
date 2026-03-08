@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "ops": [
+    {
+      "planned_op_id": "OP-001",
+      "zone": "zone-1",
+      "start": "2026-02-05T02:30:00",
+      "end": "2026-02-05T04:00:00",
+      "type": "tank_fill",
+      "note": "Planned tank fill for night operations."
+    },
+    {
+      "planned_op_id": "OP-002",
+      "zone": "zone-1",
+      "start": "2026-02-06T01:00:00",
+      "end": "2026-02-06T02:30:00",
+      "type": "maintenance",
+      "note": "Valve replacement maintenance ticket."
+    },
+    {
+      "planned_op_id": "OP-003",
+      "zone": "zone-1",
+      "start": "2026-02-05T10:00:00",
+      "end": "2026-02-05T10:30:00",
+      "type": "valve_test",
+      "note": "Short valve test; may cause pressure spikes."
+    },
+    {
+      "planned_op_id": "OP-004",
+      "zone": "zone-1",
+      "start": "2026-02-05T18:00:00",
+      "end": "2026-02-05T19:30:00",
+      "type": "demand_event",
+      "note": "Expected demand increase (scheduled)."
+    },
+    {
+      "planned_op_id": "OP-101",
+      "zone": "zone-2",
+      "start": "2026-02-05T03:00:00",
+      "end": "2026-02-05T03:45:00",
+      "type": "tank_fill",
+      "note": "Zone-2 planned fill."
+    }
+  ]
+}

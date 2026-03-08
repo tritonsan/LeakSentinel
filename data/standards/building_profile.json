@@ -1,0 +1,10 @@
+{
+  "building_id": "demo-building-01",
+  "site_name": "North Pump Station",
+  "leak_sensor_network": true,
+  "auto_shutoff_valve": false,
+  "remote_valve_control": true,
+  "alarm_notification": true,
+  "manual_override": false,
+  "battery_backup": true
+}

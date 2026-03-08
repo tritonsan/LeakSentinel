@@ -1,0 +1,18 @@
+{
+  "name": "leaksentinel-voice",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "LeakSentinel Nova 2 Sonic voice microservice (Bedrock bidirectional streaming).",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node server.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.888.0"
+  }
+}
+

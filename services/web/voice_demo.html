@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LeakSentinel Voice Demo (Nova Sonic)</title>
+    <style>
+      :root { --bg:#0b1020; --panel:#121a33; --text:#e9eefc; --muted:#aab4d6; --ok:#4ade80; --bad:#fb7185; --line:#22305a; --warn:#fbbf24; }
+      html, body { height: 100%; }
+      body { margin:0; background:radial-gradient(1000px 500px at 20% 10%, #1a2550 0, rgba(26,37,80,0) 70%),
+                          radial-gradient(800px 400px at 80% 20%, #133450 0, rgba(19,52,80,0) 70%),
+                          var(--bg);
+             color:var(--text); font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+      .wrap { max-width: 1020px; margin: 0 auto; padding: 24px; }
+      .card { background: rgba(18,26,51,.88); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+      h1 { font-size: 18px; letter-spacing: .2px; margin:0 0 8px; }
+      .muted { color: var(--muted); }
+      .row { display:flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      button { appearance:none; border:1px solid var(--line); background:#0f1733; color:var(--text);
+               padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:600; }
+      button.primary { background: linear-gradient(180deg, #1c2a66, #0f1733); border-color:#30418a; }
+      button:disabled { opacity:.5; cursor:not-allowed; }
+      .pill { display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; border:1px solid var(--line); background: rgba(8,12,24,.7); }
+      .dot { width:10px; height:10px; border-radius:999px; background: var(--bad); box-shadow: 0 0 16px rgba(251,113,133,.35); }
+      .dot.ok { background: var(--ok); box-shadow: 0 0 16px rgba(74,222,128,.35); }
+      .dot.warn { background: var(--warn); box-shadow: 0 0 16px rgba(251,191,36,.35); }
+      textarea { width:100%; min-height: 130px; resize: vertical; background: rgba(8,12,24,.7); color:var(--text);
+                 border:1px solid var(--line); border-radius:12px; padding:10px; }
+      .grid { display:grid; grid-template-columns: 1fr; gap: 12px; }
+      @media (min-width: 900px) { .grid { grid-template-columns: 1.2fr .8fr; } }
+      audio { width: 100%; }
+      code { background: rgba(8,12,24,.7); padding: 2px 6px; border-radius: 8px; border:1px solid var(--line); }
+      .input { width:100%; padding:10px; border-radius:12px; border:1px solid var(--line); background:rgba(8,12,24,.7); color:var(--text); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <h1>LeakSentinel Voice Demo (Nova 2 Sonic)</h1>
+        <div class="muted">
+          Push-to-talk mic capture -> browser PCM16 -> FastAPI WS bridge -> Nova Sonic voice backend.
+          If mic fails, use the text fallback button.
+        </div>
+        <div style="height:12px"></div>
+
+        <div class="row">
+          <span class="pill"><span id="connDot" class="dot"></span><span id="connStatus">Connection: disconnected</span></span>
+          <span class="pill"><span id="micDot" class="dot"></span><span id="micStatus">Mic: idle</span></span>
+          <span class="pill"><span id="stateDot" class="dot"></span><span id="stateStatus">State: idle</span></span>
+          <span class="pill"><span class="muted">Transport:</span> <code id="transportLabel"></code></span>
+          <span class="pill"><span class="muted">Endpoint:</span> <code id="endpointLabel"></code></span>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="row">
+          <button id="connectBtn" class="primary">Connect</button>
+          <button id="pttBtn" disabled>Hold to Talk</button>
+          <button id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+
+        <div style="height:12px"></div>
+        <div class="grid">
+          <div>
+            <div class="muted">Transcript / events</div>
+            <textarea id="log" readonly></textarea>
+          </div>
+          <div>
+            <div class="muted">Audio response</div>
+            <audio id="player" controls></audio>
+            <div style="height:8px"></div>
+            <div class="muted">Model used: <code id="modelLabel">(none)</code></div>
+            <div style="height:12px"></div>
+            <div class="muted">Text fallback</div>
+            <div style="height:8px"></div>
+            <input id="textIn" class="input" value="What happened in zone-1 at 03:00?" />
+            <div style="height:8px"></div>
+            <button id="sendTextBtn" disabled>Send Text</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const logEl = document.getElementById('log');
+      const connDot = document.getElementById('connDot');
+      const micDot = document.getElementById('micDot');
+      const stateDot = document.getElementById('stateDot');
+      const connStatus = document.getElementById('connStatus');
+      const micStatus = document.getElementById('micStatus');
+      const stateStatus = document.getElementById('stateStatus');
+      const endpointLabel = document.getElementById('endpointLabel');
+      const transportLabel = document.getElementById('transportLabel');
+      const modelLabel = document.getElementById('modelLabel');
+
+      const connectBtn = document.getElementById('connectBtn');
+      const disconnectBtn = document.getElementById('disconnectBtn');
+      const pttBtn = document.getElementById('pttBtn');
+      const sendTextBtn = document.getElementById('sendTextBtn');
+      const textIn = document.getElementById('textIn');
+      const player = document.getElementById('player');
+
+      let ws = null;
+      let mediaRecorder = null;
+      let stream = null;
+      let connected = false;
+      let responseChunks = [];
+
+      function append(msg) {
+        const ts = new Date().toISOString().slice(11, 19);
+        logEl.value += `[${ts}] ${msg}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function setConn(ok) {
+        connected = ok;
+        connDot.className = ok ? 'dot ok' : 'dot';
+        connStatus.textContent = ok ? 'Connection: connected' : 'Connection: disconnected';
+        connectBtn.disabled = ok;
+        disconnectBtn.disabled = !ok;
+        pttBtn.disabled = !ok;
+        sendTextBtn.disabled = !ok;
+      }
+
+      function setMic(active) {
+        micDot.className = active ? 'dot ok' : 'dot';
+        micStatus.textContent = active ? 'Mic: recording' : 'Mic: idle';
+      }
+
+      function setState(state, detail = '') {
+        stateStatus.textContent = `State: ${state}${detail ? ` (${detail})` : ''}`;
+        if (state === 'idle') stateDot.className = 'dot';
+        else if (state === 'recording' || state === 'playing') stateDot.className = 'dot ok';
+        else if (state === 'processing') stateDot.className = 'dot warn';
+        else stateDot.className = 'dot';
+      }
+
+      function getQuery(name, fallback = '') {
+        const qs = new URLSearchParams(location.search);
+        return qs.get(name) || fallback;
+      }
+
+      function toWsUrl(httpBase) {
+        try {
+          const u = new URL(httpBase);
+          const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+          return `${wsProto}//${u.host}/ws/voice`;
+        } catch {
+          return '';
+        }
+      }
+
+      function arrayBufferToBase64(buf) {
+        const bytes = new Uint8Array(buf);
+        const chunk = 0x8000;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+        }
+        return btoa(binary);
+      }
+
+      function bytesToBase64(bytes) {
+        const chunk = 0x8000;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+        }
+        return btoa(binary);
+      }
+
+      function base64ToBytes(b64) {
+        const bin = atob(b64);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+        return out;
+      }
+
+      function chunkBase64FromBytes(bytes, chunkSize = 3200) {
+        const out = [];
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          out.push(bytesToBase64(bytes.subarray(i, i + chunkSize)));
+        }
+        return out;
+      }
+
+      function downsampleFloat32(input, inRate, outRate) {
+        if (outRate === inRate) return input;
+        const ratio = inRate / outRate;
+        const outLen = Math.max(1, Math.round(input.length / ratio));
+        const out = new Float32Array(outLen);
+        for (let i = 0; i < outLen; i++) {
+          const pos = i * ratio;
+          const i0 = Math.floor(pos);
+          const i1 = Math.min(i0 + 1, input.length - 1);
+          const t = pos - i0;
+          out[i] = input[i0] * (1 - t) + input[i1] * t;
+        }
+        return out;
+      }
+
+      function float32ToPcm16le(float32) {
+        const out = new ArrayBuffer(float32.length * 2);
+        const view = new DataView(out);
+        for (let i = 0; i < float32.length; i++) {
+          const s = Math.max(-1, Math.min(1, float32[i]));
+          const v = s < 0 ? s * 0x8000 : s * 0x7fff;
+          view.setInt16(i * 2, v, true);
+        }
+        return out;
+      }
+
+      async function encodeMicBlobToPcm16Base64(blob) {
+        const ab = await blob.arrayBuffer();
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioBuf = await ctx.decodeAudioData(ab.slice(0));
+        const ch0 = audioBuf.getChannelData(0);
+        const down = downsampleFloat32(ch0, audioBuf.sampleRate, 16000);
+        const pcm16 = float32ToPcm16le(down);
+        return arrayBufferToBase64(pcm16);
+      }
+
+      async function sendToHttpVoiceService(pcm16B64, apiBase) {
+        const resp = await fetch(apiBase + '/v1/voice/sonic', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            audioPcm16Base64: pcm16B64,
+            sampleRateHertz: 16000,
+            userText: textIn.value || ''
+          })
+        });
+        const out = await resp.json();
+        if (!out.ok) throw new Error(out.error || 'voice backend not ok');
+        append('Transcript: ' + (out.transcript || '(none)'));
+        modelLabel.textContent = out.model_id_used || '(unknown)';
+        if (out.response_audio_wav_base64) {
+          player.src = 'data:audio/wav;base64,' + out.response_audio_wav_base64;
+          setState('playing');
+          try { await player.play(); } catch {}
+        }
+        setState('idle');
+      }
+
+      function getApiBase() {
+        const fallback = `${location.protocol}//${location.host}`;
+        return getQuery('api', fallback).replace(/\/+$/, '');
+      }
+
+      const apiBase = getApiBase();
+      const transport = getQuery('transport', 'ws').toLowerCase() === 'http' ? 'http' : 'ws';
+      const wsUrl = toWsUrl(apiBase);
+
+      transportLabel.textContent = transport;
+      endpointLabel.textContent = transport === 'ws' ? wsUrl : `${apiBase}/v1/voice/sonic`;
+
+      async function startRecording() {
+        if (!connected) {
+          append('Not connected.');
+          return;
+        }
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (e) {
+          setState('error', 'mic permission');
+          append('Mic permission failed: ' + e);
+          return;
+        }
+        setMic(true);
+        setState('recording');
+
+        const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+        let mime = '';
+        for (const m of mimeCandidates) {
+          if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+        }
+
+        const chunks = [];
+        mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+        append('Recording started (' + (mediaRecorder.mimeType || mime || 'unknown') + ')');
+
+        mediaRecorder.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) chunks.push(ev.data);
+        };
+        mediaRecorder.onstop = async () => {
+          setMic(false);
+          try { stream.getTracks().forEach(t => t.stop()); } catch {}
+          stream = null;
+          setState('processing');
+          append('Processing audio...');
+          try {
+            const blob = new Blob(chunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            const pcm16B64 = await encodeMicBlobToPcm16Base64(blob);
+
+            if (transport === 'http') {
+              await sendToHttpVoiceService(pcm16B64, apiBase);
+              return;
+            }
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+              throw new Error('WebSocket is not connected');
+            }
+            responseChunks = [];
+            ws.send(JSON.stringify({ type: 'start', sampleRateHertz: 16000, userText: textIn.value || '' }));
+
+            const bytes = base64ToBytes(pcm16B64);
+            const chunksB64 = chunkBase64FromBytes(bytes, 3200);
+            for (const c of chunksB64) {
+              ws.send(JSON.stringify({ type: 'audio_chunk', audioPcm16Base64: c }));
+            }
+            ws.send(JSON.stringify({ type: 'end' }));
+          } catch (e) {
+            setState('error', 'processing');
+            append('Processing failed: ' + e);
+          }
+        };
+        mediaRecorder.start(250);
+      }
+
+      function stopRecording() {
+        if (!mediaRecorder) return;
+        try { mediaRecorder.stop(); } catch {}
+        mediaRecorder = null;
+      }
+
+      connectBtn.onclick = async () => {
+        append('Connecting via ' + transport + '...');
+        modelLabel.textContent = '(none)';
+
+        if (transport === 'http') {
+          fetch(apiBase + '/health').then(r => r.json()).then(() => {
+            setConn(true);
+            setState('idle');
+            append('HTTP voice backend reachable.');
+          }).catch((e) => {
+            setConn(false);
+            setState('error', 'connect');
+            append('Connect failed: ' + e);
+          });
+          return;
+        }
+
+        if (!wsUrl) {
+          setConn(false);
+          setState('error', 'bad ws url');
+          append('Invalid API base URL for WebSocket.');
+          return;
+        }
+
+        try {
+          ws = new WebSocket(wsUrl);
+        } catch (e) {
+          setConn(false);
+          setState('error', 'connect');
+          append('WebSocket open failed: ' + e);
+          return;
+        }
+
+        ws.onopen = () => {
+          setConn(true);
+          setState('idle');
+          append('WebSocket connected.');
+        };
+        ws.onclose = () => {
+          setConn(false);
+          setState('idle');
+          append('WebSocket disconnected.');
+        };
+        ws.onerror = () => {
+          setState('error', 'ws');
+          append('WebSocket error.');
+        };
+        ws.onmessage = async (ev) => {
+          let msg = null;
+          try { msg = JSON.parse(ev.data); } catch { return; }
+          const t = String(msg.type || '');
+          if (!t) return;
+          if (t === 'ready') append('Server ready.');
+          else if (t === 'started') append('Streaming started.');
+          else if (t === 'processing') append('Server processing...');
+          else if (t === 'transcript_partial') append('Transcript (partial): ' + (msg.text || ''));
+          else if (t === 'transcript_final') append('Transcript: ' + (msg.text || ''));
+          else if (t === 'audio_chunk') {
+            if (msg.content) responseChunks.push(base64ToBytes(String(msg.content)));
+          } else if (t === 'error') {
+            setState('error', msg.code || 'voice');
+            append('Error [' + (msg.code || 'unknown') + ']: ' + (msg.message || ''));
+          } else if (t === 'done') {
+            if (msg.model_id_used) modelLabel.textContent = String(msg.model_id_used);
+            if (responseChunks.length > 0) {
+              const blob = new Blob(responseChunks, { type: 'audio/wav' });
+              player.src = URL.createObjectURL(blob);
+              setState('playing');
+              try { await player.play(); } catch {}
+            } else {
+              setState('idle');
+            }
+            if (!msg.ok) setState('error', 'backend');
+          } else {
+            append('Event: ' + t);
+          }
+        };
+      };
+
+      disconnectBtn.onclick = () => {
+        stopRecording();
+        if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+        ws = null;
+        setConn(false);
+        setMic(false);
+        setState('idle');
+      };
+
+      pttBtn.onmousedown = startRecording;
+      pttBtn.onmouseup = stopRecording;
+      pttBtn.onmouseleave = stopRecording;
+      pttBtn.ontouchstart = (e) => { e.preventDefault(); startRecording(); };
+      pttBtn.ontouchend = (e) => { e.preventDefault(); stopRecording(); };
+
+      sendTextBtn.onclick = async () => {
+        if (transport === 'http') {
+          append('Text fallback needs FastAPI API base (transport=ws mode).');
+          return;
+        }
+        const scenario = getQuery('scenario', 'S02');
+        const mode = getQuery('mode', 'local');
+        append(`Text fallback: POST /run scenario=${scenario} mode=${mode}`);
+        try {
+          const resp = await fetch(apiBase + '/run', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ scenario_id: scenario, mode })
+          });
+          const out = await resp.json();
+          if (resp.ok) {
+            const decision = out.decision || '(no decision)';
+            const conf = Number(out.confidence || 0).toFixed(2);
+            append(`Text fallback result: ${decision} (confidence=${conf})`);
+            if (Array.isArray(out.rationale) && out.rationale.length) append('Rationale: ' + out.rationale[0]);
+          } else {
+            append('Text fallback error: ' + JSON.stringify(out));
+          }
+        } catch (e) {
+          append('Text fallback failed: ' + e);
+        }
+      };
+
+      setConn(false);
+      setMic(false);
+      setState('idle');
+    </script>
+  </body>
+</html>

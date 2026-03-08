@@ -1,0 +1,23 @@
+{
+  "utility": {
+    "label": "Municipal Utility",
+    "impact_multiplier": 1.0,
+    "delay_multiplier": 1.0,
+    "water_cost_multiplier": 1.0,
+    "co2e_multiplier": 1.0
+  },
+  "industrial": {
+    "label": "Industrial Plant",
+    "impact_multiplier": 1.15,
+    "delay_multiplier": 1.2,
+    "water_cost_multiplier": 1.25,
+    "co2e_multiplier": 1.05
+  },
+  "campus": {
+    "label": "Campus / Facility",
+    "impact_multiplier": 0.9,
+    "delay_multiplier": 0.95,
+    "water_cost_multiplier": 0.9,
+    "co2e_multiplier": 0.95
+  }
+}

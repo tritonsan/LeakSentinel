@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "required_controls": [
+    {
+      "id": "leak_sensor_network",
+      "title": "Leak Sensor Network",
+      "description": "Critical points must have leak sensors connected to monitoring.",
+      "required": true,
+      "priority": "high"
+    },
+    {
+      "id": "auto_shutoff_valve",
+      "title": "Automatic Shutoff Valve",
+      "description": "System should support automatic valve closure on critical leak alarm.",
+      "required": true,
+      "priority": "high"
+    },
+    {
+      "id": "remote_valve_control",
+      "title": "Remote Valve Control",
+      "description": "Authorized operators can isolate affected segment remotely.",
+      "required": true,
+      "priority": "high"
+    },
+    {
+      "id": "alarm_notification",
+      "title": "Alarm Notification",
+      "description": "Escalation channel exists for operators and maintenance teams.",
+      "required": true,
+      "priority": "medium"
+    },
+    {
+      "id": "manual_override",
+      "title": "Manual Override",
+      "description": "Field team can override automatic actions safely.",
+      "required": true,
+      "priority": "medium"
+    },
+    {
+      "id": "battery_backup",
+      "title": "Backup Power",
+      "description": "Safety controls remain available during short power outages.",
+      "required": true,
+      "priority": "low"
+    }
+  ]
+}

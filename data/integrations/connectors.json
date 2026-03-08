@@ -1,0 +1,22 @@
+{
+  "connectors": [
+    {
+      "id": "conn-webhook-in-1",
+      "type": "webhook_in",
+      "name": "SCADA Webhook Inbound",
+      "enabled": true
+    },
+    {
+      "id": "conn-csv-drop-1",
+      "type": "csv_drop",
+      "name": "Batch CSV Drop",
+      "enabled": true
+    },
+    {
+      "id": "conn-webhook-out-1",
+      "type": "webhook_out",
+      "name": "CMMS Webhook Outbound",
+      "enabled": false
+    }
+  ]
+}

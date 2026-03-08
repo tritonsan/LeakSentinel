@@ -1,0 +1,85 @@
+{
+  "claims": [
+    {
+      "id": "agentic_ai_category",
+      "source": {
+        "path": "docs/DEVPOST_SUBMISSION_DRAFT.md",
+        "contains": ["Agentic AI"]
+      },
+      "evidence": [
+        {
+          "path": "README.md",
+          "contains": ["Category (submission): Agentic AI"]
+        },
+        {
+          "path": "plan.md",
+          "contains": ["Primary category candidate: **Agentic AI**"]
+        }
+      ]
+    },
+    {
+      "id": "nova_2_lite_reasoning_usage",
+      "source": {
+        "path": "docs/DEVPOST_SUBMISSION_DRAFT.md",
+        "contains": ["Nova 2 Lite"]
+      },
+      "evidence": [
+        {
+          "path": "ABOUT.md",
+          "contains": ["Reasoning and decision synthesis (Nova 2 Lite)"]
+        },
+        {
+          "path": "docs/BEDROCK_SETUP.md",
+          "contains": ["NOVA_REASONING_MODEL_ID"]
+        }
+      ]
+    },
+    {
+      "id": "voice_demo_claim",
+      "source": {
+        "path": "docs/DEMO_VIDEO_SCRIPT_3MIN.md",
+        "contains": ["Voice segment", "push-to-talk"]
+      },
+      "evidence": [
+        {
+          "path": "README.md",
+          "contains": ["Voice (Nova 2 Sonic)", "voice_demo.html"]
+        },
+        {
+          "path": "services/api/main.py",
+          "contains": ["/ws/voice", "transcript_final"]
+        }
+      ]
+    },
+    {
+      "id": "judge_outputs_contract",
+      "source": {
+        "path": "docs/DEMO_VIDEO_SCRIPT_3MIN.md",
+        "contains": ["decision trace", "confidence calibration", "provenance"]
+      },
+      "evidence": [
+        {
+          "path": "docs/JUDGE_DEMO_RUNBOOK.md",
+          "contains": ["decision_trace_v1", "confidence_calibration_v1", "provenance_v1"]
+        },
+        {
+          "path": "tests/test_judge_mode_contract.py",
+          "contains": ["judge_compliance"]
+        }
+      ]
+    },
+    {
+      "id": "benchmark_gate_claim",
+      "source": {
+        "path": "docs/DEMO_VIDEO_SCRIPT_3MIN.md",
+        "contains": ["Benchmark gates pass"]
+      },
+      "evidence": [
+        {
+          "path": "data/_reports/benchmark_gate_latest.md",
+          "contains": ["tuning_latest", "PASS", "holdout_v2_latest"]
+        }
+      ]
+    }
+  ]
+}
