@@ -325,6 +325,7 @@ Resources:
 
   ServiceScalableTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: Service
     Properties:
       MaxCapacity: !Ref MaxCapacity
       MinCapacity: !Ref MinCapacity
