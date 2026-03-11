@@ -189,6 +189,7 @@ Recommended for realtime voice + WebSocket streaming:
 - Claim/evidence map: `docs/claim_evidence_map.json`
 - Security modes: `docs/SECURITY_MODES.md`
 - Secrets policy: `docs/SECRETS_POLICY.md`
+- Voice backend deploy: `docs/DEPLOY_VOICE_BACKEND.md`
 - Snapshot generator: `python scripts/hackathon_readiness_snapshot.py`
 - Claim lint: `python scripts/claim_lint.py`
 - Hosted judge run capture: `python scripts/capture_hosted_judge_run.py --api-base http://<AlbDnsName> --scenario-id S05 --mode bedrock --api-key <key>`
