@@ -456,6 +456,7 @@ Resources:
               "properties": {
                 "title": "ALB Errors and Unhealthy Hosts",
                 "view": "timeSeries",
+                "region": "${AWS::Region}",
                 "period": 60,
                 "stat": "Sum",
                 "metrics": [
@@ -473,6 +474,7 @@ Resources:
               "properties": {
                 "title": "ALB p95 Latency",
                 "view": "timeSeries",
+                "region": "${AWS::Region}",
                 "period": 60,
                 "metrics": [
                   ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${LoadBalancer.LoadBalancerFullName}", "TargetGroup", "${TargetGroup.TargetGroupFullName}", {"stat": "p95"}]
@@ -488,6 +490,7 @@ Resources:
               "properties": {
                 "title": "ECS CPU and Memory",
                 "view": "timeSeries",
+                "region": "${AWS::Region}",
                 "period": 60,
                 "metrics": [
                   ["AWS/ECS", "CPUUtilization", "ClusterName", "${AppName}-cluster", "ServiceName", "${AppName}-svc"],
@@ -504,6 +507,7 @@ Resources:
               "properties": {
                 "title": "Request Count",
                 "view": "timeSeries",
+                "region": "${AWS::Region}",
                 "period": 60,
                 "stat": "Sum",
                 "metrics": [
