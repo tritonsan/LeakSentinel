@@ -220,6 +220,18 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - !If
+          - HasApiKeysSecret
+          - PolicyName: !Sub "${AppName}-ecs-exec-secrets"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource: !Ref ApiKeysSecretValueFrom
+          - !Ref AWS::NoValue
 
   TaskRole:
     Type: AWS::IAM::Role
