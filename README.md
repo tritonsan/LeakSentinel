@@ -193,6 +193,8 @@ Recommended for realtime voice + WebSocket streaming:
 - Claim lint: `python scripts/claim_lint.py`
 - Hosted judge run capture: `python scripts/capture_hosted_judge_run.py --api-base http://<AlbDnsName> --scenario-id S05 --mode bedrock --api-key <key>`
 - Demo preflight: `powershell -ExecutionPolicy Bypass -File scripts\\demo_preflight.ps1 -ApiBase http://<AlbDnsName> -RequireVoice`
+- Public repo preflight: `powershell -ExecutionPolicy Bypass -File scripts\\public_repo_preflight.ps1`
+- Public repo + live demo runbook: `docs/PUBLIC_REPO_AND_LIVE_DEMO.md`
 
 ## Optional: LLM Offload
 If you want to offload token-heavy repo scans (multi-file summaries, stub finding) to an external OpenAI model, see:

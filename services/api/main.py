@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from dotenv import load_dotenv
 
 from leaksentinel.config import AppSettings
 from leaksentinel.feedback.store import VALID_OUTCOMES, create_feedback_record, resolve_latest_bundle_for_scenario
@@ -42,6 +43,8 @@ from leaksentinel.integrations.bridge import export_data, ingest_event, list_con
 logger = logging.getLogger("leaksentinel.api")
 if not logger.handlers:
     logging.basicConfig(level=os.getenv("LEAKSENTINEL_LOG_LEVEL", "INFO"))
+
+load_dotenv(".env")
 
 
 app = FastAPI(title="LeakSentinel API", version="0.1.0")
@@ -367,6 +370,7 @@ class RunRequest(BaseModel):
     include_scorecard: bool = True
     include_standards: bool = True
     judge_mode: bool = False
+    write_bundle: bool = True
 
 
 class CoveragePlanRequest(BaseModel):
@@ -496,7 +500,7 @@ def run(req: RunRequest) -> dict:
     return run_scenario(
         scenario_id=req.scenario_id,
         mode=req.mode,
-        write_bundle=True,
+        write_bundle=bool(req.write_bundle),
         analysis_version=req.analysis_version,
         include_counterfactuals=bool(req.include_counterfactuals),
         include_impact=bool(req.include_impact),

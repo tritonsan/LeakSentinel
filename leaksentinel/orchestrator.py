@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -2172,8 +2173,19 @@ def run_scenario(
     if write_bundle:
         settings.paths.evidence_dir.mkdir(parents=True, exist_ok=True)
         safe_ts = ctx["timestamp"].replace(":", "-")
-        bundle_path = settings.paths.evidence_dir / f"{scenario_id}_{zone}_{safe_ts}.json"
-        bundle_path.write_text(json.dumps(decision, indent=2), encoding="utf-8")
+        bundle_name = f"{scenario_id}_{zone}_{safe_ts}.json"
+        bundle_path = settings.paths.evidence_dir / bundle_name
+        bundle_json = json.dumps(decision, indent=2)
+        try:
+            bundle_path.write_text(bundle_json, encoding="utf-8")
+        except PermissionError:
+            fallback_dir = Path(tempfile.gettempdir()) / "leaksentinel" / "evidence_bundles"
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+            bundle_path = fallback_dir / bundle_name
+            bundle_path.write_text(bundle_json, encoding="utf-8")
+            decision["_bundle_warning"] = (
+                f"Primary evidence dir was not writable; bundle saved to fallback path: {bundle_path}"
+            )
         decision["_bundle_path"] = str(bundle_path)
 
     return decision

@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,10 @@ from urllib import request as urlrequest
 
 import pandas as pd
 import streamlit as st
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from leaksentinel.ops.coverage_optimizer import build_coverage_plan
 from leaksentinel.ops.closed_loop import simulate_closed_loop
@@ -30,9 +35,9 @@ from leaksentinel.impact.kpis import compute_impact_kpis
 DATA = Path("data")
 OPS_DB = DATA / "ops_db.json"
 MANIFEST = DATA / "manifest" / "manifest.csv"
-BUNDLES = DATA / "evidence_bundles"
-FEEDBACK_DIR = DATA / "feedback"
-INCIDENTS = DATA / "ops" / "incidents.json"
+BUNDLES = Path(os.getenv("LEAKSENTINEL_EVIDENCE_DIR", str(DATA / "evidence_bundles")))
+FEEDBACK_DIR = Path(os.getenv("LEAKSENTINEL_FEEDBACK_DIR", str(DATA / "feedback")))
+INCIDENTS = Path(os.getenv("LEAKSENTINEL_INCIDENTS_PATH", str(DATA / "ops" / "incidents.json")))
 
 
 def _load_env_fallback() -> None:

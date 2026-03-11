@@ -34,3 +34,13 @@ package-lock.json
 # Local media captures
 *.mp4
 *.mov
+ABOUT.txt
+Hackhathon_docs.txt
+plan.md
+leaksentinel-codex-plus/
+docs/0310_frames/
+docs/video_frames/
+docs/*.jpg
+docs/*.png
+scripts/render_demo_architecture_diagram.py
+scripts/render_video_endcards.py
