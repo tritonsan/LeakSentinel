@@ -21,9 +21,7 @@ COPY ui ui
 COPY docs docs
 COPY data data
 COPY README.md README.md
-COPY plan.md plan.md
 
 EXPOSE 8000
 
 CMD ["python", "-m", "uvicorn", "services.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
