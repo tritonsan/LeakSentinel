@@ -81,7 +81,6 @@ Resources:
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub "${AppName}-alb"
       Scheme: internet-facing
       Type: application
       SecurityGroups: [!Ref AlbSecurityGroup]
@@ -90,7 +89,6 @@ Resources:
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub "${AppName}-tg"
       VpcId: !Ref VpcId
       Port: !Ref ContainerPort
       Protocol: HTTP
