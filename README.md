@@ -186,6 +186,7 @@ Recommended for realtime voice + WebSocket streaming:
 - Judge demo runbook: `docs/JUDGE_DEMO_RUNBOOK.md`
 - Readiness snapshot (latest): `docs/HACKATHON_READINESS_LATEST.md`
 - Devpost form draft: `docs/DEVPOST_SUBMISSION_DRAFT.md`
+- Builder blog draft: `docs/BUILDER_AWS_BLOG_DRAFT.md`
 - 3-minute demo script: `docs/DEMO_VIDEO_SCRIPT_3MIN.md`
 - Claim/evidence map: `docs/claim_evidence_map.json`
 - Security modes: `docs/SECURITY_MODES.md`
