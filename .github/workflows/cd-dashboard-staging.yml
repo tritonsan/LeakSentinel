@@ -1,0 +1,75 @@
+name: CD Dashboard Staging
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: ${{ vars.DASHBOARD_ECR_REPOSITORY || 'leaksentinel-dashboard' }}
+  STACK_NAME: ${{ vars.STAGING_DASHBOARD_STACK_NAME || 'leaksentinel-dashboard-staging' }}
+  APP_NAME: ${{ vars.STAGING_DASHBOARD_APP_NAME || 'leaksentinel-dashboard-staging' }}
+  API_STACK_NAME: ${{ vars.STAGING_STACK_NAME || 'leaksentinel-staging' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve API endpoints
+        id: api
+        run: |
+          API_DNS=$(aws cloudformation describe-stacks \
+            --region "${AWS_REGION}" \
+            --stack-name "${API_STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='AlbDnsName'].OutputValue" \
+            --output text)
+          if [ -z "${API_DNS}" ] || [ "${API_DNS}" = "None" ]; then
+            echo "Failed to resolve API ALB DNS from stack ${API_STACK_NAME}"
+            exit 1
+          fi
+          echo "api_base=http://${API_DNS}" >> "${GITHUB_OUTPUT}"
+          echo "voice_demo_url=http://${API_DNS}/demo/voice_demo.html?api=http://${API_DNS}" >> "${GITHUB_OUTPUT}"
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push dashboard image
+        id: image
+        run: |
+          ACCOUNT_ID="${{ vars.AWS_ACCOUNT_ID }}"
+          IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}"
+          aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" --region "${AWS_REGION}" >/dev/null 2>&1 || \
+            aws ecr create-repository --repository-name "${ECR_REPOSITORY}" --region "${AWS_REGION}" >/dev/null
+          docker build -f ui/Dockerfile -t "${IMAGE_URI}" .
+          docker push "${IMAGE_URI}"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy CloudFormation (dashboard staging)
+        run: |
+          aws cloudformation deploy \
+            --region "${AWS_REGION}" \
+            --stack-name "${STACK_NAME}" \
+            --template-file infra/cfn/ecs-fargate-dashboard.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              AppName="${APP_NAME}" \
+              ImageUri="${{ steps.image.outputs.image_uri }}" \
+              VpcId="${{ vars.VPC_ID }}" \
+              PublicSubnets="${{ vars.PUBLIC_SUBNETS }}" \
+              PrivateSubnets="${{ vars.PRIVATE_SUBNETS }}" \
+              AssignPublicIp="${{ vars.STAGING_ASSIGN_PUBLIC_IP || 'ENABLED' }}" \
+              ApiBaseUrl="${{ steps.api.outputs.api_base }}" \
+              VoiceDemoUrl="${{ steps.api.outputs.voice_demo_url }}"

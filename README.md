@@ -161,6 +161,7 @@ Recommended for realtime voice + WebSocket streaming:
 - GitHub Actions workflows:
   - `.github/workflows/ci.yml`
   - `.github/workflows/cd-staging.yml`
+  - `.github/workflows/cd-dashboard-staging.yml`
   - `.github/workflows/cd-prod.yml`
   - Variable/secret map: `cicd/README.md`
 

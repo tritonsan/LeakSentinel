@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: LeakSentinel Streamlit dashboard on ECS Fargate behind an ALB.
+
+Parameters:
+  AppName:
+    Type: String
+    Default: leaksentinel-dashboard
+  ContainerPort:
+    Type: Number
+    Default: 8501
+  DesiredCount:
+    Type: Number
+    Default: 1
+  Cpu:
+    Type: String
+    Default: "512"
+    AllowedValues: ["256", "512", "1024", "2048", "4096"]
+  Memory:
+    Type: String
+    Default: "1024"
+    AllowedValues: ["512", "1024", "2048", "3072", "4096", "8192", "16384", "30720"]
+  ImageUri:
+    Type: String
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  AssignPublicIp:
+    Type: String
+    Default: ENABLED
+    AllowedValues: [ENABLED, DISABLED]
+  ApiBaseUrl:
+    Type: String
+    Default: ""
+  VoiceDemoUrl:
+    Type: String
+    Default: ""
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AppName}"
+      RetentionInDays: 14
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AppName}-cluster"
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AppName} ALB SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AppName} Task SG"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${AppName}-alb"
+      Scheme: internet-facing
+      Type: application
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Subnets: !Ref PublicSubnets
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${AppName}-tg"
+      VpcId: !Ref VpcId
+      Port: !Ref ContainerPort
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckEnabled: true
+      HealthCheckPath: /_stcore/health
+      HealthCheckProtocol: HTTP
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AppName}-ecs-exec"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${AppName}-task"
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${AppName}-ui"
+          Image: !Ref ImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: LEAKSENTINEL_API_BASE
+              Value: !Ref ApiBaseUrl
+            - Name: LEAKSENTINEL_VOICE_URL
+              Value: !Ref VoiceDemoUrl
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: Listener
+    Properties:
+      ServiceName: !Sub "${AppName}-svc"
+      Cluster: !Ref Cluster
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      HealthCheckGracePeriodSeconds: 90
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 200
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: !Ref AssignPublicIp
+          SecurityGroups: [!Ref TaskSecurityGroup]
+          Subnets: !Ref PrivateSubnets
+      LoadBalancers:
+        - ContainerName: !Sub "${AppName}-ui"
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  AlbDnsName:
+    Description: Public URL for the Streamlit dashboard.
+    Value: !GetAtt LoadBalancer.DNSName
+  ClusterName:
+    Description: ECS cluster name.
+    Value: !Sub "${AppName}-cluster"
+  ServiceName:
+    Description: ECS service name.
+    Value: !Sub "${AppName}-svc"
+  LogGroupName:
+    Description: CloudWatch Logs group for dashboard container logs.
+    Value: !Ref LogGroup
